@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LanShare - 局域网文件互传</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <div class="title-bar">
+      <div class="brand">
+        <div class="logo">⇄</div>
+        <span>LanShare</span>
+      </div>
+      <div class="window-controls">
+        <button class="btn-min" title="最小化"></button>
+        <button class="btn-max" title="最大化"></button>
+        <button class="btn-close" title="关闭"></button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="hero-card">
+        <h1>局域网文件互传</h1>
+        <p class="subtitle">电脑作为服务器，手机输入 IP 即可上传或下载文件</p>
+
+        <div class="control-row">
+          <div class="input-group">
+            <label for="port">端口号</label>
+            <input type="number" id="port" value="34345" min="1024" max="65535">
+          </div>
+
+          <button id="toggleServer" class="btn btn-primary">
+            <span id="toggleIcon">▶</span>
+            <span id="toggleText">启动</span>
+          </button>
+
+          <button id="openDir" class="btn btn-secondary">打开共享文件夹</button>
+
+          <div class="info-pill" id="ipPill">
+            <span class="dot off" id="statusDot"></span>
+            <span id="ipText">服务器未启动</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-grid">
+        <div class="panel">
+          <h2>📤 添加文件到共享</h2>
+          <div class="drop-zone" id="dropZone">
+            <div class="icon">⬆</div>
+            <div class="hint">
+              拖拽文件到此处<br>
+              或 <strong>点击选择文件</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>📁 共享文件列表</h2>
+          <div class="file-list" id="fileList">
+            <div class="empty-state">
+              <div class="icon">📂</div>
+              <span>暂无共享文件</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <span id="statusLeft">就绪</span>
+      <span id="statusRight">共享目录: <span id="sharedDir">加载中...</span></span>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

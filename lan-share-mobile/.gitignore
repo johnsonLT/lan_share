@@ -1,0 +1,52 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+/.gradle
+/captures
+/gradlew
+/gradlew.bat
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/key.properties
+/android/*.jks
+/android/*.keystore
+
+# iOS / macOS
+/ios/
+/macos/
+/linux/
+/windows/
+/web/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Test coverage
+coverage/
+*.info
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db

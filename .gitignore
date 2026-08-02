@@ -1,0 +1,40 @@
+# Dependencies
+lan-share-desktop/node_modules/
+
+# Build outputs
+lan-share-desktop/dist/
+lan-share-desktop/build/
+
+# Runtime data
+lan-share-desktop/shared/*
+lan-share-desktop/shared/.gitkeep
+
+# Electron
+lan-share-desktop/out/
+lan-share-desktop/release/
+
+# Flutter/Dart
+lan-share-mobile/.dart_tool/
+lan-share-mobile/.flutter-plugins
+lan-share-mobile/.flutter-plugins-dependencies
+lan-share-mobile/build/
+
+# Android
+lan-share-mobile/local.properties
+lan-share-mobile/.gradle
+lan-share-mobile/captures
+lan-share-mobile/gradlew
+lan-share-mobile/gradlew.bat
+lan-share-mobile/android/app/debug
+lan-share-mobile/android/app/profile
+lan-share-mobile/android/app/release
+
+# IDE
+lan-share-mobile/.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Logs
+*.log
