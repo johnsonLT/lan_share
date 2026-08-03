@@ -5,16 +5,27 @@ const os = require('os');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const { Server } = require('socket.io');
+const { v4: uuidv4 } = require('uuid');
+const Store = require('electron-store');
+
+const store = new Store();
 
 let mainWindow;
 let server = null;
+let io = null;
 let serverPort = 34345;
+let httpServerInstance = null;
 
 const appDataPath = app.getPath('userData');
-const sharedDir = path.join(appDataPath, 'LanShare', 'shared');
-if (!fs.existsSync(sharedDir)) {
-  fs.mkdirSync(sharedDir, { recursive: true });
+let sharedDir = store.get('sharedDir') || path.join(appDataPath, 'LanShare', 'shared');
+let receiveDir = store.get('receiveDir') || path.join(appDataPath, 'LanShare', 'received');
+
+function ensureDirs() {
+  if (!fs.existsSync(sharedDir)) fs.mkdirSync(sharedDir, { recursive: true });
+  if (!fs.existsSync(receiveDir)) fs.mkdirSync(receiveDir, { recursive: true });
 }
+ensureDirs();
 
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -29,9 +40,13 @@ function getLocalIP() {
 }
 
 function createWindow() {
+  const savedBounds = store.get('windowBounds');
+  const defaultWidth = 900;
+  const defaultHeight = 680;
+
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 680,
+    width: savedBounds?.width || defaultWidth,
+    height: savedBounds?.height || defaultHeight,
     minWidth: 720,
     minHeight: 560,
     title: 'LanShare - 局域网文件互传',
@@ -55,6 +70,14 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  mainWindow.on('resize', () => {
+    store.set('windowBounds', mainWindow.getBounds());
+  });
+
+  mainWindow.on('move', () => {
+    store.set('windowBounds', mainWindow.getBounds());
+  });
 }
 
 app.whenReady().then(() => {
@@ -66,19 +89,18 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (server) {
-    server.close();
-  }
+  stopServer();
   if (process.platform !== 'darwin') app.quit();
 });
 
-function getFileList() {
+function getFileList(dir) {
   try {
-    const files = fs.readdirSync(sharedDir);
+    if (!fs.existsSync(dir)) return [];
+    const files = fs.readdirSync(dir);
     return files
-      .filter((f) => fs.statSync(path.join(sharedDir, f)).isFile())
+      .filter((f) => fs.statSync(path.join(dir, f)).isFile())
       .map((f) => {
-        const stat = fs.statSync(path.join(sharedDir, f));
+        const stat = fs.statSync(path.join(dir, f));
         return {
           name: f,
           size: stat.size,
@@ -99,12 +121,29 @@ function formatSize(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+function safeFileName(fileName) {
+  return Buffer.from(fileName, 'latin1').toString('utf8');
+}
+
+function makeUniquePath(dir, name) {
+  let dest = path.join(dir, name);
+  let counter = 1;
+  let finalName = name;
+  while (fs.existsSync(dest)) {
+    const ext = path.extname(name);
+    const base = path.basename(name, ext);
+    finalName = `${base} (${counter})${ext}`;
+    dest = path.join(dir, finalName);
+    counter++;
+  }
+  return { finalName, dest };
+}
+
+const clients = new Map();
+
 function startServer(port) {
   return new Promise((resolve, reject) => {
-    if (server) {
-      server.close();
-      server = null;
-    }
+    stopServer();
 
     const appExpress = express();
     appExpress.use(cors());
@@ -113,24 +152,15 @@ function startServer(port) {
     const storage = multer.diskStorage({
       destination: (req, file, cb) => cb(null, sharedDir),
       filename: (req, file, cb) => {
-        let name = Buffer.from(file.originalname, 'latin1').toString('utf8');
-        let dest = path.join(sharedDir, name);
-        let counter = 1;
-        let finalName = name;
-        while (fs.existsSync(dest)) {
-          const ext = path.extname(name);
-          const base = path.basename(name, ext);
-          finalName = `${base} (${counter})${ext}`;
-          dest = path.join(sharedDir, finalName);
-          counter++;
-        }
+        const name = safeFileName(file.originalname);
+        const { finalName } = makeUniquePath(sharedDir, name);
         cb(null, finalName);
       }
     });
     const upload = multer({ storage });
 
     appExpress.get('/api/files', (req, res) => {
-      const list = getFileList().map((f) => ({ ...f, sizeText: formatSize(f.size) }));
+      const list = getFileList(sharedDir).map((f) => ({ ...f, sizeText: formatSize(f.size) }));
       res.json({ success: true, files: list });
     });
 
@@ -163,14 +193,71 @@ function startServer(port) {
       res.json({ success: true, status: 'running', port: serverPort });
     });
 
-    appExpress.use(express.static(path.join(__dirname, 'public')));
+    appExpress.get('/api/clients', (req, res) => {
+      const list = Array.from(clients.values()).map(c => ({ id: c.id, name: c.name, platform: c.platform }));
+      res.json({ success: true, clients: list });
+    });
 
-    server = appExpress.listen(port, () => {
+    appExpress.post('/api/register', (req, res) => {
+      const { clientId, name, platform } = req.body;
+      if (!clientId) return res.status(400).json({ success: false, message: 'clientId required' });
+      clients.set(clientId, {
+        id: clientId,
+        name: name || '未知设备',
+        platform: platform || 'unknown',
+        socketId: null,
+        pendingFiles: []
+      });
+      notifyClientsChanged();
+      res.json({ success: true });
+    });
+
+    appExpress.post('/api/heartbeat/:clientId', (req, res) => {
+      const clientId = req.params.clientId;
+      const client = clients.get(clientId);
+      if (client) {
+        client.lastSeen = Date.now();
+      }
+      res.json({ success: true });
+    });
+
+    appExpress.get('/api/pending/:clientId', (req, res) => {
+      const clientId = req.params.clientId;
+      const client = clients.get(clientId);
+      if (!client) return res.json({ success: true, files: [] });
+      res.json({ success: true, files: client.pendingFiles || [] });
+    });
+
+    httpServerInstance = appExpress.listen(port, () => {
       serverPort = port;
+      io = new Server(httpServerInstance, { cors: { origin: '*' } });
+
+      io.on('connection', (socket) => {
+        socket.on('register', (data) => {
+          const clientId = data.clientId || uuidv4();
+          clients.set(clientId, {
+            id: clientId,
+            name: data.name || '未知设备',
+            platform: data.platform || 'unknown',
+            socketId: socket.id,
+            pendingFiles: []
+          });
+          socket.clientId = clientId;
+          notifyClientsChanged();
+        });
+
+        socket.on('disconnect', () => {
+          if (socket.clientId) {
+            clients.delete(socket.clientId);
+            notifyClientsChanged();
+          }
+        });
+      });
+
       resolve({ success: true, port, ip: getLocalIP() });
     });
 
-    server.on('error', (err) => {
+    httpServerInstance.on('error', (err) => {
       reject({ success: false, message: err.message });
     });
   });
@@ -178,8 +265,13 @@ function startServer(port) {
 
 function stopServer() {
   return new Promise((resolve) => {
-    if (server) {
-      server.close(() => {
+    if (io) {
+      io.close();
+      io = null;
+    }
+    if (httpServerInstance) {
+      httpServerInstance.close(() => {
+        httpServerInstance = null;
         server = null;
         resolve({ success: true });
       });
@@ -189,19 +281,82 @@ function stopServer() {
   });
 }
 
+function notifyClientsChanged() {
+  if (mainWindow) {
+    mainWindow.webContents.send('clients-changed', Array.from(clients.values()).map(c => ({ id: c.id, name: c.name, platform: c.platform })));
+  }
+}
+
+function pushFileToClient(clientId, fileName) {
+  const client = clients.get(clientId);
+  if (!client) return { success: false, message: '客户端不在线' };
+
+  const filePath = path.join(sharedDir, fileName);
+  if (!filePath.startsWith(sharedDir) || !fs.existsSync(filePath)) {
+    return { success: false, message: '文件不存在' };
+  }
+
+  client.pendingFiles = client.pendingFiles || [];
+  client.pendingFiles.push({ name: fileName, size: fs.statSync(filePath).size, time: Date.now() });
+
+  if (io) {
+    io.to(client.socketId).emit('push_file', { name: fileName, size: fs.statSync(filePath).size });
+  }
+  return { success: true };
+}
+
+ipcMain.handle('get-settings', () => {
+  return {
+    sharedDir,
+    receiveDir,
+    defaultPort: store.get('defaultPort') || 34345
+  };
+});
+
+ipcMain.handle('set-shared-dir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: '选择共享文件夹'
+  });
+  if (result.canceled || !result.filePaths.length) return { success: false };
+  sharedDir = result.filePaths[0];
+  store.set('sharedDir', sharedDir);
+  ensureDirs();
+  return { success: true, path: sharedDir };
+});
+
+ipcMain.handle('set-receive-dir', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: '选择文件接收目录'
+  });
+  if (result.canceled || !result.filePaths.length) return { success: false };
+  receiveDir = result.filePaths[0];
+  store.set('receiveDir', receiveDir);
+  ensureDirs();
+  return { success: true, path: receiveDir };
+});
+
 ipcMain.handle('get-local-ip', () => getLocalIP());
 ipcMain.handle('get-shared-dir', () => sharedDir);
+ipcMain.handle('get-receive-dir', () => receiveDir);
 ipcMain.handle('open-shared-dir', () => shell.openPath(sharedDir));
+ipcMain.handle('open-receive-dir', () => shell.openPath(receiveDir));
+
 ipcMain.handle('start-server', async (event, port) => {
   try {
     const result = await startServer(port);
+    server = httpServerInstance;
     return result;
   } catch (err) {
     return err;
   }
 });
+
 ipcMain.handle('stop-server', () => stopServer());
-ipcMain.handle('get-files', () => getFileList().map((f) => ({ ...f, sizeText: formatSize(f.size) })));
+ipcMain.handle('get-files', () => getFileList(sharedDir).map((f) => ({ ...f, sizeText: formatSize(f.size) })));
+ipcMain.handle('get-receive-files', () => getFileList(receiveDir).map((f) => ({ ...f, sizeText: formatSize(f.size) })));
+
 ipcMain.handle('delete-file', (event, fileName) => {
   const filePath = path.join(sharedDir, fileName);
   if (filePath.startsWith(sharedDir) && fs.existsSync(filePath)) {
@@ -210,9 +365,15 @@ ipcMain.handle('delete-file', (event, fileName) => {
   }
   return { success: false, message: '文件不存在' };
 });
+
+ipcMain.handle('push-file', (event, clientId, fileName) => {
+  return pushFileToClient(clientId, fileName);
+});
+
 ipcMain.handle('window-minimize', () => {
   if (mainWindow) mainWindow.minimize();
 });
+
 ipcMain.handle('window-maximize', () => {
   if (mainWindow) {
     if (mainWindow.isMaximized()) {
@@ -222,6 +383,14 @@ ipcMain.handle('window-maximize', () => {
     }
   }
 });
+
+ipcMain.handle('window-restore-default', () => {
+  if (mainWindow) {
+    mainWindow.setSize(900, 680);
+    mainWindow.center();
+  }
+});
+
 ipcMain.handle('window-close', () => {
   if (mainWindow) mainWindow.close();
 });
@@ -235,18 +404,55 @@ ipcMain.handle('select-files-to-share', async () => {
   const copied = [];
   for (const src of result.filePaths) {
     const baseName = path.basename(src);
-    let destName = baseName;
-    let destPath = path.join(sharedDir, destName);
-    let counter = 1;
-    while (fs.existsSync(destPath)) {
-      const ext = path.extname(baseName);
-      const name = path.basename(baseName, ext);
-      destName = `${name} (${counter})${ext}`;
-      destPath = path.join(sharedDir, destName);
-      counter++;
-    }
-    fs.copyFileSync(src, destPath);
-    copied.push(destName);
+    const { finalName, dest } = makeUniquePath(sharedDir, baseName);
+    fs.copyFileSync(src, dest);
+    copied.push(finalName);
   }
   return { success: true, files: copied };
+});
+
+ipcMain.handle('download-from-server', async (event, baseUrl, fileName) => {
+  try {
+    const url = `${baseUrl}/api/download/${encodeURIComponent(fileName)}`;
+    const { finalName, dest } = makeUniquePath(receiveDir, fileName);
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('下载失败');
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs.writeFileSync(dest, buffer);
+
+    return { success: true, fileName: finalName, path: dest };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('upload-to-server', async (event, baseUrl, filePaths) => {
+  try {
+    const FormData = require('form-data');
+    const axios = require('axios');
+    const form = new FormData();
+
+    for (const src of filePaths) {
+      const name = path.basename(src);
+      form.append('files', fs.createReadStream(src), name);
+    }
+
+    const response = await axios.post(`${baseUrl}/api/upload`, form, {
+      headers: form.getHeaders()
+    });
+
+    return response.data;
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('select-files-for-upload', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile', 'multiSelections'],
+    title: '选择要上传的文件'
+  });
+  if (result.canceled || !result.filePaths.length) return { success: false };
+  return { success: true, files: result.filePaths };
 });

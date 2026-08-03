@@ -14,55 +14,159 @@
         <span>LanShare</span>
       </div>
       <div class="window-controls">
-        <button class="btn-min" title="最小化"></button>
-        <button class="btn-max" title="最大化"></button>
-        <button class="btn-close" title="关闭"></button>
+        <button class="btn-min" title="最小化">−</button>
+        <button class="btn-max" title="最大化/还原">□</button>
+        <button class="btn-restore" title="恢复默认大小">◱</button>
+        <button class="btn-close" title="关闭">×</button>
       </div>
     </div>
 
     <div class="content">
       <div class="hero-card">
         <h1>局域网文件互传</h1>
-        <p class="subtitle">电脑作为服务器，手机输入 IP 即可上传或下载文件</p>
+        <p class="subtitle">可作为服务器被连接，也可作为客户端连接其他设备</p>
 
-        <div class="control-row">
-          <div class="input-group">
-            <label for="port">端口号</label>
-            <input type="number" id="port" value="34345" min="1024" max="65535">
+        <div class="mode-tabs">
+          <button class="mode-tab active" data-mode="server">服务器模式</button>
+          <button class="mode-tab" data-mode="client">客户端模式</button>
+        </div>
+      </div>
+
+      <!-- Server Mode -->
+      <div id="serverPanel" class="mode-panel active">
+        <div class="control-card">
+          <div class="control-row">
+            <div class="input-group">
+              <label for="port">端口号</label>
+              <input type="number" id="port" value="34345" min="1024" max="65535">
+            </div>
+
+            <button id="toggleServer" class="btn btn-primary">
+              <span id="toggleIcon">▶</span>
+              <span id="toggleText">启动</span>
+            </button>
+
+            <div class="info-pill" id="ipPill">
+              <span class="dot off" id="statusDot"></span>
+              <span id="ipText">服务器未启动</span>
+            </div>
           </div>
 
-          <button id="toggleServer" class="btn btn-primary">
-            <span id="toggleIcon">▶</span>
-            <span id="toggleText">启动</span>
-          </button>
+          <div class="folder-row">
+            <div class="folder-info">
+              <span class="label">共享文件夹</span>
+              <span class="path" id="sharedDirPath">加载中...</span>
+            </div>
+            <div class="folder-actions">
+              <button id="changeSharedDir" class="btn btn-secondary">更改</button>
+              <button id="openSharedDir" class="btn btn-secondary">打开</button>
+            </div>
+          </div>
 
-          <button id="openDir" class="btn btn-secondary">打开共享文件夹</button>
+          <div class="folder-row">
+            <div class="folder-info">
+              <span class="label">文件接收目录</span>
+              <span class="path" id="receiveDirPath">加载中...</span>
+            </div>
+            <div class="folder-actions">
+              <button id="changeReceiveDir" class="btn btn-secondary">更改</button>
+              <button id="openReceiveDir" class="btn btn-secondary">打开</button>
+            </div>
+          </div>
+        </div>
 
-          <div class="info-pill" id="ipPill">
-            <span class="dot off" id="statusDot"></span>
-            <span id="ipText">服务器未启动</span>
+        <div class="main-grid">
+          <div class="panel">
+            <h2>📤 添加文件到共享</h2>
+            <div class="drop-zone" id="dropZone">
+              <div class="icon">⬆</div>
+              <div class="hint">
+                拖拽文件到此处<br>
+                或 <strong>点击选择文件</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>📁 共享文件列表</h2>
+            <div class="file-list" id="fileList">
+              <div class="empty-state">
+                <div class="icon">📂</div>
+                <span>暂无共享文件</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel clients-panel">
+          <h2>📱 已连接客户端</h2>
+          <div class="clients-list" id="clientsList">
+            <div class="empty-state small">
+              <span>暂无客户端连接</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="main-grid">
-        <div class="panel">
-          <h2>📤 添加文件到共享</h2>
-          <div class="drop-zone" id="dropZone">
-            <div class="icon">⬆</div>
-            <div class="hint">
-              拖拽文件到此处<br>
-              或 <strong>点击选择文件</strong>
+      <!-- Client Mode -->
+      <div id="clientPanel" class="mode-panel">
+        <div class="control-card">
+          <div class="control-row">
+            <div class="input-group">
+              <label for="serverIp">服务器 IP</label>
+              <input type="text" id="serverIp" placeholder="例如 192.168.1.5">
+            </div>
+
+            <div class="input-group">
+              <label for="serverPort">端口</label>
+              <input type="number" id="serverPort" value="34345" min="1024" max="65535">
+            </div>
+
+            <button id="connectServer" class="btn btn-primary">连接</button>
+            <button id="disconnectServer" class="btn btn-danger" disabled>断开</button>
+          </div>
+
+          <div class="folder-row">
+            <div class="folder-info">
+              <span class="label">本机文件接收目录</span>
+              <span class="path" id="clientReceiveDirPath">加载中...</span>
+            </div>
+            <div class="folder-actions">
+              <button id="clientChangeReceiveDir" class="btn btn-secondary">更改</button>
+              <button id="clientOpenReceiveDir" class="btn btn-secondary">打开</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="main-grid">
+          <div class="panel">
+            <h2>⬆ 上传文件到服务器</h2>
+            <div class="drop-zone" id="clientUploadZone">
+              <div class="icon">⬆</div>
+              <div class="hint">
+                点击选择文件<br>
+                <strong>上传到服务器</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <h2>📥 服务器文件列表</h2>
+            <div class="file-list" id="serverFileList">
+              <div class="empty-state">
+                <div class="icon">📂</div>
+                <span>未连接服务器</span>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="panel">
-          <h2>📁 共享文件列表</h2>
-          <div class="file-list" id="fileList">
+          <h2>📥 本机接收到的文件</h2>
+          <div class="file-list" id="receiveFileList">
             <div class="empty-state">
               <div class="icon">📂</div>
-              <span>暂无共享文件</span>
+              <span>暂无接收文件</span>
             </div>
           </div>
         </div>
@@ -71,7 +175,7 @@
 
     <div class="status-bar">
       <span id="statusLeft">就绪</span>
-      <span id="statusRight">共享目录: <span id="sharedDir">加载中...</span></span>
+      <span id="statusRight">模式: 服务器</span>
     </div>
 
     <div class="toast" id="toast"></div>

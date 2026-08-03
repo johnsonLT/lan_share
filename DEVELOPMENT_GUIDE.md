@@ -243,9 +243,86 @@ cd lan-share-mobile
 
 ---
 
-## 八、后续维护建议
+## 八、v2 新增功能实现要点
 
-1. **不要随意升级 Flutter 版本**：每个新版本可能伴随 Gradle/AGP/compileSdk 要求变化，容易重新触发 5.5、5.6 类问题。
+### 8.1 手机端 IP 历史记录
+
+- 使用 `shared_preferences` 存储历史 IP 列表
+- 连接页提供下拉菜单（PopupMenuButton）和历史 Chip
+- 支持一键清空
+
+### 8.2 手机端文件接收目录持久化
+
+- 使用 `shared_preferences` 存储用户选择的目录路径
+- 默认路径为 `Downloads/LanShare`
+- 通过 `file_picker` 的 `getDirectoryPath()` 让用户选择目录
+
+### 8.3 电脑端客户端模式
+
+- Electron 渲染进程提供「服务器模式 / 客户端模式」切换
+- 客户端模式通过 HTTP 连接远端服务器
+- 支持浏览服务器文件、上传、下载
+- 使用 `localStorage` 生成并持久化 `clientId`
+
+### 8.4 服务器向客户端推送文件
+
+- 服务器集成 `socket.io`，客户端连接后发送 `register` 事件
+- 服务器 UI 显示已连接客户端列表
+- 选择文件和客户端后，服务器发送 `push_file` 事件
+- 移动端通过 Socket.IO 监听并自动下载
+- 桌面客户端通过 HTTP 轮询 `/api/pending/:clientId` 获取待接收文件
+
+### 8.5 文件接收地址
+
+- 电脑端：`electron-store` 持久化 `receiveDir`，默认在 `%appdata%/LanShare/received`
+- 手机端：`shared_preferences` 持久化接收目录
+
+### 8.6 窗口大小持久化与恢复
+
+- `electron-store` 保存窗口 `bounds`
+- 新增「恢复默认大小」按钮，将窗口设为 900×680 并居中
+
+### 8.7 共享文件夹自定义
+
+- 电脑端通过对话框选择目录
+- `electron-store` 持久化 `sharedDir`
+- 下次启动自动加载上次选择的目录
+
+---
+
+## 九、⚠️ 新增坑点
+
+### 9.1 项目与 pub cache 不在同一磁盘导致 Kotlin 编译失败
+
+**现象**：
+```
+Could not close incremental caches ... class-fq-name-to-source.tab
+this and base files have different roots: C:\...\pub.cache\... and D:\...
+```
+
+**解决**：
+1. 设置 `PUB_CACHE=D:\04_ProgramFiles\pub-cache`
+2. 在 `android/gradle.properties` 中添加：
+   ```properties
+   org.gradle.daemon=false
+   kotlin.incremental=false
+   ```
+3. 构建前结束所有 `java.exe` 进程
+
+### 9.2 `CardTheme` 类型变更
+
+Flutter 3.44 中 `ThemeData.cardTheme` 需要 `CardThemeData`，不是 `CardTheme`。
+
+### 9.3 `file_picker` 与 `compileSdk` 冲突
+
+`file_picker` 依赖的库要求 `compileSdk` 至少 36，需在 `android/build.gradle.kts` 中统一强制所有子项目 `compileSdk = 36`。
+
+---
+
+## 十、后续维护建议
+
+1. **不要随意升级 Flutter 版本**：每个新版本可能伴随 Gradle/AGP/compileSdk 要求变化，容易重新触发 5.5、5.6、9.1 类问题。
 2. **保留本地 Gradle zip 缓存**：首次下载成功后，备份 `gradle-9.1.0-all.zip`，后续可改为 `file:///` 路径避免网络问题。
-3. **构建前检查环境变量**：特别是 `JAVA_HOME`，系统默认值是 Java 8，必须手动覆盖。
+3. **构建前检查环境变量**：特别是 `JAVA_HOME` 和 `PUB_CACHE`。
 4. **清理缓存要谨慎**：删除 `.gradle/caches` 会丢失大量已下载依赖，首次重新构建会非常慢。
+5. **Git 忽略打包产物**：`dist/`、`build/`、`.dart_tool/`、`node_modules/` 等不要提交到仓库。
