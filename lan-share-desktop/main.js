@@ -39,6 +39,28 @@ function getLocalIP() {
   return '127.0.0.1';
 }
 
+function getLocalIPs() {
+  const ips = [];
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push(iface.address);
+      }
+    }
+  }
+  return ips;
+}
+
+function addIpToHistory(key, ip) {
+  if (!ip || ip.trim() === '') return;
+  const value = ip.trim();
+  const list = store.get(key) || [];
+  const filtered = list.filter((item) => item !== value);
+  filtered.unshift(value);
+  store.set(key, filtered.slice(0, 20));
+}
+
 function createWindow() {
   const savedBounds = store.get('windowBounds');
   const defaultWidth = 900;
@@ -57,8 +79,8 @@ function createWindow() {
     },
     show: false,
     frame: false,
-    transparent: true,
-    backgroundColor: '#00000000'
+    transparent: false,
+    backgroundColor: '#0f1115'
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
@@ -141,9 +163,12 @@ function makeUniquePath(dir, name) {
 
 const clients = new Map();
 
-function startServer(port) {
+function startServer(port, bindIp) {
   return new Promise((resolve, reject) => {
     stopServer();
+
+    const host = (bindIp && bindIp.trim()) ? bindIp.trim() : '0.0.0.0';
+    const displayIp = host === '0.0.0.0' ? getLocalIP() : host;
 
     const appExpress = express();
     appExpress.use(cors());
@@ -228,7 +253,7 @@ function startServer(port) {
       res.json({ success: true, files: client.pendingFiles || [] });
     });
 
-    httpServerInstance = appExpress.listen(port, () => {
+    httpServerInstance = appExpress.listen(port, host, () => {
       serverPort = port;
       io = new Server(httpServerInstance, { cors: { origin: '*' } });
 
@@ -254,7 +279,7 @@ function startServer(port) {
         });
       });
 
-      resolve({ success: true, port, ip: getLocalIP() });
+      resolve({ success: true, port, ip: displayIp, host });
     });
 
     httpServerInstance.on('error', (err) => {
@@ -309,7 +334,12 @@ ipcMain.handle('get-settings', () => {
   return {
     sharedDir,
     receiveDir,
-    defaultPort: store.get('defaultPort') || 34345
+    defaultPort: store.get('defaultPort') || 34345,
+    serverBindIpHistory: store.get('serverBindIpHistory') || [],
+    selectedServerBindIp: store.get('selectedServerBindIp') || '',
+    localIPs: getLocalIPs(),
+    clientServerIpHistory: store.get('clientServerIpHistory') || [],
+    selectedClientServerIp: store.get('selectedClientServerIp') || ''
   };
 });
 
@@ -338,14 +368,38 @@ ipcMain.handle('set-receive-dir', async () => {
 });
 
 ipcMain.handle('get-local-ip', () => getLocalIP());
+ipcMain.handle('get-local-ips', () => getLocalIPs());
+
+ipcMain.handle('add-server-bind-ip-history', (event, ip) => {
+  addIpToHistory('serverBindIpHistory', ip);
+  store.set('selectedServerBindIp', ip);
+});
+ipcMain.handle('clear-server-bind-ip-history', () => {
+  store.set('serverBindIpHistory', []);
+});
+ipcMain.handle('set-selected-server-bind-ip', (event, ip) => {
+  store.set('selectedServerBindIp', ip);
+});
+
+ipcMain.handle('add-client-server-ip-history', (event, ip) => {
+  addIpToHistory('clientServerIpHistory', ip);
+  store.set('selectedClientServerIp', ip);
+});
+ipcMain.handle('clear-client-server-ip-history', () => {
+  store.set('clientServerIpHistory', []);
+});
+ipcMain.handle('set-selected-client-server-ip', (event, ip) => {
+  store.set('selectedClientServerIp', ip);
+});
+
 ipcMain.handle('get-shared-dir', () => sharedDir);
 ipcMain.handle('get-receive-dir', () => receiveDir);
 ipcMain.handle('open-shared-dir', () => shell.openPath(sharedDir));
 ipcMain.handle('open-receive-dir', () => shell.openPath(receiveDir));
 
-ipcMain.handle('start-server', async (event, port) => {
+ipcMain.handle('start-server', async (event, port, bindIp) => {
   try {
-    const result = await startServer(port);
+    const result = await startServer(port, bindIp);
     server = httpServerInstance;
     return result;
   } catch (err) {

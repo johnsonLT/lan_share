@@ -234,8 +234,14 @@ html, body {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
   gap: 20px;
+  min-height: 360px;
+}
+
+.main-grid > .panel {
   min-height: 0;
+  overflow: hidden;
 }
 
 .panel {
@@ -496,6 +502,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  flex-shrink: 0;
 }
 
 .folder-row {
@@ -542,7 +549,10 @@ html, body {
 
 .clients-panel,
 #clientPanel .panel:last-child {
-  min-height: 160px;
+  flex-shrink: 0;
+  min-height: 120px;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .clients-list {
@@ -604,6 +614,32 @@ html, body {
 
 .btn-restore {
   background: var(--text-secondary);
+}
+
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+#serverBindIp,
+#serverIp {
+  width: 170px;
 }
 
 .window-controls button {

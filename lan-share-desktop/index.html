@@ -37,6 +37,12 @@
         <div class="control-card">
           <div class="control-row">
             <div class="input-group">
+              <label for="serverBindIp">IP 地址</label>
+              <input type="text" id="serverBindIp" list="serverBindIpList" placeholder="自动 / 输入 IP">
+              <datalist id="serverBindIpList"></datalist>
+            </div>
+
+            <div class="input-group">
               <label for="port">端口号</label>
               <input type="number" id="port" value="34345" min="1024" max="65535">
             </div>
@@ -45,6 +51,8 @@
               <span id="toggleIcon">▶</span>
               <span id="toggleText">启动</span>
             </button>
+
+            <button id="clearServerIpHistory" class="btn btn-icon" title="清除 IP 历史">🗑</button>
 
             <div class="info-pill" id="ipPill">
               <span class="dot off" id="statusDot"></span>
@@ -114,7 +122,8 @@
           <div class="control-row">
             <div class="input-group">
               <label for="serverIp">服务器 IP</label>
-              <input type="text" id="serverIp" placeholder="例如 192.168.1.5">
+              <input type="text" id="serverIp" list="clientServerIpList" placeholder="例如 192.168.1.5">
+              <datalist id="clientServerIpList"></datalist>
             </div>
 
             <div class="input-group">
@@ -124,6 +133,7 @@
 
             <button id="connectServer" class="btn btn-primary">连接</button>
             <button id="disconnectServer" class="btn btn-danger" disabled>断开</button>
+            <button id="clearClientIpHistory" class="btn btn-icon" title="清除 IP 历史">🗑</button>
           </div>
 
           <div class="folder-row">

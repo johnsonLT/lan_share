@@ -10,6 +10,9 @@ localStorage.setItem('lanshare_client_id', clientId);
 let clientPollInterval = null;
 
 const portInput = document.getElementById('port');
+const serverBindIpInput = document.getElementById('serverBindIp');
+const serverBindIpListEl = document.getElementById('serverBindIpList');
+const clearServerIpHistoryBtn = document.getElementById('clearServerIpHistory');
 const toggleBtn = document.getElementById('toggleServer');
 const toggleIcon = document.getElementById('toggleIcon');
 const toggleText = document.getElementById('toggleText');
@@ -25,6 +28,8 @@ const receiveDirPathEl = document.getElementById('receiveDirPath');
 const clientsListEl = document.getElementById('clientsList');
 
 const serverIpInput = document.getElementById('serverIp');
+const clientServerIpListEl = document.getElementById('clientServerIpList');
+const clearClientIpHistoryBtn = document.getElementById('clearClientIpHistory');
 const serverPortInput = document.getElementById('serverPort');
 const connectBtn = document.getElementById('connectServer');
 const disconnectBtn = document.getElementById('disconnectServer');
@@ -32,6 +37,10 @@ const serverFileListEl = document.getElementById('serverFileList');
 const clientUploadZone = document.getElementById('clientUploadZone');
 const receiveFileListEl = document.getElementById('receiveFileList');
 const clientReceiveDirPathEl = document.getElementById('clientReceiveDirPath');
+
+let localIPs = [];
+let serverBindIpHistory = [];
+let clientServerIpHistory = [];
 
 // Window controls
 document.querySelector('.btn-min').addEventListener('click', () => window.electronAPI.minimizeWindow());
@@ -61,8 +70,41 @@ async function init() {
   receiveDirPathEl.textContent = settings.receiveDir;
   clientReceiveDirPathEl.textContent = settings.receiveDir;
   portInput.value = settings.defaultPort || 34345;
+
+  localIPs = settings.localIPs || [];
+  serverBindIpHistory = settings.serverBindIpHistory || [];
+  clientServerIpHistory = settings.clientServerIpHistory || [];
+
+  serverBindIpInput.value = settings.selectedServerBindIp || '';
+  serverIpInput.value = settings.selectedClientServerIp || '';
+
+  renderServerBindIpOptions();
+  renderClientServerIpOptions();
+
   refreshFiles();
   refreshReceiveFiles();
+}
+
+function renderServerBindIpOptions() {
+  const seen = new Set();
+  const options = [];
+  for (const ip of localIPs) {
+    if (!seen.has(ip)) {
+      seen.add(ip);
+      options.push({ value: ip, label: `${ip} (本机)` });
+    }
+  }
+  for (const ip of serverBindIpHistory) {
+    if (!seen.has(ip)) {
+      seen.add(ip);
+      options.push({ value: ip, label: ip });
+    }
+  }
+  serverBindIpListEl.innerHTML = options.map((o) => `<option value="${o.value}" label="${o.label}"></option>`).join('');
+}
+
+function renderClientServerIpOptions() {
+  clientServerIpListEl.innerHTML = clientServerIpHistory.map((ip) => `<option value="${ip}"></option>`).join('');
 }
 
 // Server mode
@@ -104,13 +146,20 @@ async function startServer() {
     return;
   }
 
+  const bindIp = serverBindIpInput.value.trim();
   toggleBtn.disabled = true;
-  const result = await window.electronAPI.startServer(port);
+  const result = await window.electronAPI.startServer(port, bindIp);
   toggleBtn.disabled = false;
 
   if (result.success) {
     isRunning = true;
     updateServerUI(result.ip, result.port);
+    if (bindIp) {
+      await window.electronAPI.addServerBindIpHistory(bindIp);
+      serverBindIpHistory = serverBindIpHistory.filter((ip) => ip !== bindIp);
+      serverBindIpHistory.unshift(bindIp);
+      renderServerBindIpOptions();
+    }
     showToast(`服务器已启动: ${result.ip}:${result.port}`);
     refreshInterval = setInterval(refreshFiles, 2000);
   } else {
@@ -222,6 +271,10 @@ connectBtn.addEventListener('click', async () => {
       isClientConnected = true;
       disconnectBtn.disabled = false;
       connectBtn.textContent = '已连接';
+      await window.electronAPI.addClientServerIpHistory(ip);
+      clientServerIpHistory = clientServerIpHistory.filter((item) => item !== ip);
+      clientServerIpHistory.unshift(ip);
+      renderClientServerIpOptions();
       showToast('连接服务器成功');
       refreshServerFiles();
       clientRefreshInterval = setInterval(refreshServerFiles, 3000);
@@ -321,6 +374,28 @@ document.getElementById('clientChangeReceiveDir').addEventListener('click', asyn
 });
 
 document.getElementById('clientOpenReceiveDir').addEventListener('click', () => window.electronAPI.openReceiveDir());
+
+clearServerIpHistoryBtn.addEventListener('click', async () => {
+  await window.electronAPI.clearServerBindIpHistory();
+  serverBindIpHistory = [];
+  renderServerBindIpOptions();
+  showToast('已清除 IP 历史');
+});
+
+clearClientIpHistoryBtn.addEventListener('click', async () => {
+  await window.electronAPI.clearClientServerIpHistory();
+  clientServerIpHistory = [];
+  renderClientServerIpOptions();
+  showToast('已清除 IP 历史');
+});
+
+serverBindIpInput.addEventListener('change', () => {
+  window.electronAPI.setSelectedServerBindIp(serverBindIpInput.value.trim());
+});
+
+serverIpInput.addEventListener('change', () => {
+  window.electronAPI.setSelectedClientServerIp(serverIpInput.value.trim());
+});
 
 // Drag and drop server
 dropZone.addEventListener('click', async () => {
