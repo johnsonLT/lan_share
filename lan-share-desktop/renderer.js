@@ -12,6 +12,7 @@ let clientPollInterval = null;
 const portInput = document.getElementById('port');
 const serverBindIpInput = document.getElementById('serverBindIp');
 const serverBindIpListEl = document.getElementById('serverBindIpList');
+const refreshServerIpBtn = document.getElementById('refreshServerIp');
 const clearServerIpHistoryBtn = document.getElementById('clearServerIpHistory');
 const toggleBtn = document.getElementById('toggleServer');
 const toggleIcon = document.getElementById('toggleIcon');
@@ -411,6 +412,12 @@ clearServerIpHistoryBtn.addEventListener('click', async () => {
   serverBindIpHistory = [];
   renderServerBindIpOptions();
   showToast('已清除 IP 历史');
+});
+
+refreshServerIpBtn.addEventListener('click', async () => {
+  localIPs = await window.electronAPI.getLocalIPs();
+  renderServerBindIpOptions();
+  showToast('本机 IP 已刷新');
 });
 
 clearClientIpHistoryBtn.addEventListener('click', async () => {

@@ -693,6 +693,12 @@ html, body {
   color: var(--text);
 }
 
+.ip-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 #serverBindIp,
 #serverIp {
   width: 170px;

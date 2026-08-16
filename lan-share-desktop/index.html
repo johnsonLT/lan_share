@@ -36,9 +36,12 @@
       <div id="serverPanel" class="mode-panel active">
         <div class="control-card">
           <div class="control-row">
-            <div class="input-group">
+            <div class="input-group ip-input-group">
               <label for="serverBindIp">IP 地址</label>
-              <input type="text" id="serverBindIp" list="serverBindIpList" placeholder="自动 / 输入 IP">
+              <div class="ip-input-wrap">
+                <input type="text" id="serverBindIp" list="serverBindIpList" placeholder="自动 / 输入 IP">
+                <button id="refreshServerIp" class="btn btn-icon" title="刷新本机 IP">🔄</button>
+              </div>
               <datalist id="serverBindIpList"></datalist>
             </div>
 
