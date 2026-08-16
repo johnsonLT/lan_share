@@ -121,5 +121,4 @@ flutter build apk --release
 
 - 请确保手机和电脑连接在同一局域网（同一 WiFi）下
 - 如果无法连接，请检查防火墙是否允许端口号 `34345` 的访问
-- 开发环境如需安装新软件，统一安装到 `D:\04_ProgramFiles`
 - 打包产物（`dist/`、`build/`）较大，不建议提交到 Git；建议使用 GitHub Releases 分发
