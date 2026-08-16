@@ -183,8 +183,7 @@ async function startServer() {
       renderServerBindIpOptions();
     }
     const bindInfo = bindIp || '0.0.0.0';
-    const fallbackMsg = result.fallback ? ' [指定 IP 不可用，已回退到 0.0.0.0]' : '';
-    addLog(serverLogListEl, `服务器已启动: ${result.ip}:${result.port} (绑定 ${bindInfo})${fallbackMsg}`, 'success');
+    addLog(serverLogListEl, `服务器已启动: ${result.ip}:${result.port} (绑定 ${bindInfo})`, 'success');
     showToast(`服务器已启动: ${result.ip}:${result.port}`);
     refreshInterval = setInterval(refreshFiles, 2000);
   } else {

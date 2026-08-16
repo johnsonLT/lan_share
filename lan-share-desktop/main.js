@@ -166,139 +166,124 @@ const clients = new Map();
 function startServer(port, bindIp) {
   return new Promise((resolve, reject) => {
     stopServer().then(() => {
-      const requestedHost = (bindIp && bindIp.trim()) ? bindIp.trim() : '';
-      const fallbackHosts = requestedHost ? [requestedHost, '0.0.0.0'] : ['0.0.0.0'];
-      let attemptIndex = 0;
+      const host = (bindIp && bindIp.trim()) ? bindIp.trim() : '0.0.0.0';
+      const displayIp = host === '0.0.0.0' ? getLocalIP() : host;
 
-      function attemptNext() {
-        if (attemptIndex >= fallbackHosts.length) {
-          return reject({ success: false, message: '所有可用 IP 绑定均失败' });
+      const appExpress = express();
+      appExpress.use(cors());
+      appExpress.use(express.json());
+
+      const storage = multer.diskStorage({
+        destination: (req, file, cb) => cb(null, sharedDir),
+        filename: (req, file, cb) => {
+          const name = safeFileName(file.originalname);
+          const { finalName } = makeUniquePath(sharedDir, name);
+          cb(null, finalName);
         }
-        const host = fallbackHosts[attemptIndex++];
-        const displayIp = host === '0.0.0.0' ? getLocalIP() : host;
+      });
+      const upload = multer({ storage });
 
-        const appExpress = express();
-        appExpress.use(cors());
-        appExpress.use(express.json());
+      appExpress.get('/api/files', (req, res) => {
+        const list = getFileList(sharedDir).map((f) => ({ ...f, sizeText: formatSize(f.size) }));
+        res.json({ success: true, files: list });
+      });
 
-        const storage = multer.diskStorage({
-          destination: (req, file, cb) => cb(null, sharedDir),
-          filename: (req, file, cb) => {
-            const name = safeFileName(file.originalname);
-            const { finalName } = makeUniquePath(sharedDir, name);
-            cb(null, finalName);
-          }
+      appExpress.post('/api/upload', upload.array('files'), (req, res) => {
+        res.json({ success: true, count: req.files ? req.files.length : 0 });
+      });
+
+      appExpress.get('/api/download/:name', (req, res) => {
+        const fileName = decodeURIComponent(req.params.name);
+        const filePath = path.join(sharedDir, fileName);
+        if (!filePath.startsWith(sharedDir) || !fs.existsSync(filePath)) {
+          return res.status(404).json({ success: false, message: '文件不存在' });
+        }
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.sendFile(filePath);
+      });
+
+      appExpress.delete('/api/files/:name', (req, res) => {
+        const fileName = decodeURIComponent(req.params.name);
+        const filePath = path.join(sharedDir, fileName);
+        if (!filePath.startsWith(sharedDir) || !fs.existsSync(filePath)) {
+          return res.status(404).json({ success: false, message: '文件不存在' });
+        }
+        fs.unlinkSync(filePath);
+        res.json({ success: true });
+      });
+
+      appExpress.get('/api/status', (req, res) => {
+        res.json({ success: true, status: 'running', port: serverPort });
+      });
+
+      appExpress.get('/api/clients', (req, res) => {
+        const list = Array.from(clients.values()).map(c => ({ id: c.id, name: c.name, platform: c.platform }));
+        res.json({ success: true, clients: list });
+      });
+
+      appExpress.post('/api/register', (req, res) => {
+        const { clientId, name, platform } = req.body;
+        if (!clientId) return res.status(400).json({ success: false, message: 'clientId required' });
+        clients.set(clientId, {
+          id: clientId,
+          name: name || '未知设备',
+          platform: platform || 'unknown',
+          socketId: null,
+          pendingFiles: []
         });
-        const upload = multer({ storage });
+        notifyClientsChanged();
+        res.json({ success: true });
+      });
 
-        appExpress.get('/api/files', (req, res) => {
-          const list = getFileList(sharedDir).map((f) => ({ ...f, sizeText: formatSize(f.size) }));
-          res.json({ success: true, files: list });
-        });
+      appExpress.post('/api/heartbeat/:clientId', (req, res) => {
+        const clientId = req.params.clientId;
+        const client = clients.get(clientId);
+        if (client) {
+          client.lastSeen = Date.now();
+        }
+        res.json({ success: true });
+      });
 
-        appExpress.post('/api/upload', upload.array('files'), (req, res) => {
-          res.json({ success: true, count: req.files ? req.files.length : 0 });
-        });
+      appExpress.get('/api/pending/:clientId', (req, res) => {
+        const clientId = req.params.clientId;
+        const client = clients.get(clientId);
+        if (!client) return res.json({ success: true, files: [] });
+        res.json({ success: true, files: client.pendingFiles || [] });
+      });
 
-        appExpress.get('/api/download/:name', (req, res) => {
-          const fileName = decodeURIComponent(req.params.name);
-          const filePath = path.join(sharedDir, fileName);
-          if (!filePath.startsWith(sharedDir) || !fs.existsSync(filePath)) {
-            return res.status(404).json({ success: false, message: '文件不存在' });
-          }
-          res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-          res.setHeader('Content-Type', 'application/octet-stream');
-          res.sendFile(filePath);
-        });
+      httpServerInstance = appExpress.listen(port, host, () => {
+        serverPort = port;
+        io = new Server(httpServerInstance, { cors: { origin: '*' } });
 
-        appExpress.delete('/api/files/:name', (req, res) => {
-          const fileName = decodeURIComponent(req.params.name);
-          const filePath = path.join(sharedDir, fileName);
-          if (!filePath.startsWith(sharedDir) || !fs.existsSync(filePath)) {
-            return res.status(404).json({ success: false, message: '文件不存在' });
-          }
-          fs.unlinkSync(filePath);
-          res.json({ success: true });
-        });
-
-        appExpress.get('/api/status', (req, res) => {
-          res.json({ success: true, status: 'running', port: serverPort });
-        });
-
-        appExpress.get('/api/clients', (req, res) => {
-          const list = Array.from(clients.values()).map(c => ({ id: c.id, name: c.name, platform: c.platform }));
-          res.json({ success: true, clients: list });
-        });
-
-        appExpress.post('/api/register', (req, res) => {
-          const { clientId, name, platform } = req.body;
-          if (!clientId) return res.status(400).json({ success: false, message: 'clientId required' });
-          clients.set(clientId, {
-            id: clientId,
-            name: name || '未知设备',
-            platform: platform || 'unknown',
-            socketId: null,
-            pendingFiles: []
+        io.on('connection', (socket) => {
+          socket.on('register', (data) => {
+            const clientId = data.clientId || uuidv4();
+            clients.set(clientId, {
+              id: clientId,
+              name: data.name || '未知设备',
+              platform: data.platform || 'unknown',
+              socketId: socket.id,
+              pendingFiles: []
+            });
+            socket.clientId = clientId;
+            notifyClientsChanged();
           });
-          notifyClientsChanged();
-          res.json({ success: true });
-        });
 
-        appExpress.post('/api/heartbeat/:clientId', (req, res) => {
-          const clientId = req.params.clientId;
-          const client = clients.get(clientId);
-          if (client) {
-            client.lastSeen = Date.now();
-          }
-          res.json({ success: true });
-        });
-
-        appExpress.get('/api/pending/:clientId', (req, res) => {
-          const clientId = req.params.clientId;
-          const client = clients.get(clientId);
-          if (!client) return res.json({ success: true, files: [] });
-          res.json({ success: true, files: client.pendingFiles || [] });
-        });
-
-        httpServerInstance = appExpress.listen(port, host, () => {
-          serverPort = port;
-          io = new Server(httpServerInstance, { cors: { origin: '*' } });
-
-          io.on('connection', (socket) => {
-            socket.on('register', (data) => {
-              const clientId = data.clientId || uuidv4();
-              clients.set(clientId, {
-                id: clientId,
-                name: data.name || '未知设备',
-                platform: data.platform || 'unknown',
-                socketId: socket.id,
-                pendingFiles: []
-              });
-              socket.clientId = clientId;
+          socket.on('disconnect', () => {
+            if (socket.clientId) {
+              clients.delete(socket.clientId);
               notifyClientsChanged();
-            });
-
-            socket.on('disconnect', () => {
-              if (socket.clientId) {
-                clients.delete(socket.clientId);
-                notifyClientsChanged();
-              }
-            });
+            }
           });
-
-          resolve({ success: true, port, ip: displayIp, host, fallback: host !== requestedHost && requestedHost !== '' });
         });
 
-        httpServerInstance.on('error', (err) => {
-          if (attemptIndex < fallbackHosts.length && (err.code === 'EADDRNOTAVAIL' || err.code === 'EINVAL' || err.code === 'EADDRINUSE')) {
-            stopServer().then(attemptNext);
-          } else {
-            reject({ success: false, message: err.message });
-          }
-        });
-      }
+        resolve({ success: true, port, ip: displayIp, host });
+      });
 
-      attemptNext();
+      httpServerInstance.on('error', (err) => {
+        reject({ success: false, message: err.message });
+      });
     });
   });
 }

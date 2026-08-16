@@ -1,6 +1,6 @@
 {
   "name": "lan-share-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "局域网文件互传 - 电脑端",
   "main": "main.js",
   "scripts": {
