@@ -237,10 +237,12 @@ html, body {
   grid-template-rows: 1fr;
   gap: 20px;
   min-height: 360px;
+  align-items: stretch;
 }
 
 .main-grid > .panel {
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -548,11 +550,64 @@ html, body {
 }
 
 .clients-panel,
-#clientPanel .panel:last-child {
+#clientPanel .panel:last-of-type:not(.log-panel) {
   flex-shrink: 0;
   min-height: 120px;
   max-height: 220px;
   overflow-y: auto;
+}
+
+.log-panel {
+  flex-shrink: 0;
+  min-height: 160px;
+  height: 180px;
+  overflow: hidden;
+}
+
+.log-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  padding-right: 4px;
+}
+
+.log-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.log-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+
+.log-entry {
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.log-entry .log-time {
+  color: var(--text-secondary);
+  margin-right: 8px;
+}
+
+.log-entry.log-info {
+  color: var(--text-secondary);
+}
+
+.log-entry.log-success {
+  color: var(--success);
+}
+
+.log-entry.log-warn {
+  color: var(--warning);
+}
+
+.log-entry.log-error {
+  color: var(--danger);
 }
 
 .clients-list {

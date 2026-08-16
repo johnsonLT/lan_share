@@ -26,6 +26,7 @@ const statusRight = document.getElementById('statusRight');
 const sharedDirPathEl = document.getElementById('sharedDirPath');
 const receiveDirPathEl = document.getElementById('receiveDirPath');
 const clientsListEl = document.getElementById('clientsList');
+const serverLogListEl = document.getElementById('serverLogList');
 
 const serverIpInput = document.getElementById('serverIp');
 const clientServerIpListEl = document.getElementById('clientServerIpList');
@@ -37,6 +38,7 @@ const serverFileListEl = document.getElementById('serverFileList');
 const clientUploadZone = document.getElementById('clientUploadZone');
 const receiveFileListEl = document.getElementById('receiveFileList');
 const clientReceiveDirPathEl = document.getElementById('clientReceiveDirPath');
+const clientLogListEl = document.getElementById('clientLogList');
 
 let localIPs = [];
 let serverBindIpHistory = [];
@@ -81,6 +83,9 @@ async function init() {
   renderServerBindIpOptions();
   renderClientServerIpOptions();
 
+  addLog(serverLogListEl, '应用初始化完成', 'info');
+  addLog(clientLogListEl, '应用初始化完成', 'info');
+
   refreshFiles();
   refreshReceiveFiles();
 }
@@ -120,24 +125,34 @@ document.getElementById('changeSharedDir').addEventListener('click', async () =>
   const result = await window.electronAPI.setSharedDir();
   if (result.success) {
     sharedDirPathEl.textContent = result.path;
+    addLog(serverLogListEl, '共享文件夹已更改: ' + result.path, 'info');
     showToast('共享文件夹已更改');
     refreshFiles();
   }
 });
 
-document.getElementById('openSharedDir').addEventListener('click', () => window.electronAPI.openSharedDir());
+document.getElementById('openSharedDir').addEventListener('click', () => {
+  window.electronAPI.openSharedDir();
+  addLog(serverLogListEl, '打开共享文件夹', 'info');
+});
 
 document.getElementById('changeReceiveDir').addEventListener('click', async () => {
   const result = await window.electronAPI.setReceiveDir();
   if (result.success) {
     receiveDirPathEl.textContent = result.path;
     clientReceiveDirPathEl.textContent = result.path;
+    addLog(serverLogListEl, '接收目录已更改: ' + result.path, 'info');
+    addLog(clientLogListEl, '接收目录已更改: ' + result.path, 'info');
     showToast('接收目录已更改');
     refreshReceiveFiles();
   }
 });
 
-document.getElementById('openReceiveDir').addEventListener('click', () => window.electronAPI.openReceiveDir());
+document.getElementById('openReceiveDir').addEventListener('click', () => {
+  window.electronAPI.openReceiveDir();
+  addLog(serverLogListEl, '打开接收目录', 'info');
+  addLog(clientLogListEl, '打开接收目录', 'info');
+});
 
 async function startServer() {
   const port = parseInt(portInput.value, 10);
@@ -160,9 +175,12 @@ async function startServer() {
       serverBindIpHistory.unshift(bindIp);
       renderServerBindIpOptions();
     }
+    const bindInfo = bindIp || '0.0.0.0';
+    addLog(serverLogListEl, `服务器已启动: ${result.ip}:${result.port} (绑定 ${bindInfo})`, 'success');
     showToast(`服务器已启动: ${result.ip}:${result.port}`);
     refreshInterval = setInterval(refreshFiles, 2000);
   } else {
+    addLog(serverLogListEl, '启动失败: ' + result.message, 'error');
     showToast('启动失败: ' + result.message);
   }
 }
@@ -173,6 +191,7 @@ async function stopServer() {
   toggleBtn.disabled = false;
   isRunning = false;
   updateServerUI(null, null);
+  addLog(serverLogListEl, '服务器已停止', 'warn');
   showToast('服务器已停止');
   if (refreshInterval) {
     clearInterval(refreshInterval);
@@ -240,6 +259,7 @@ function renderFileList(container, files, context) {
 window.deleteFile = async (fileName) => {
   const result = await window.electronAPI.deleteFile(fileName);
   if (result.success) {
+    addLog(serverLogListEl, '已删除文件: ' + fileName, 'warn');
     showToast('已删除: ' + fileName);
     refreshFiles();
   }
@@ -275,6 +295,7 @@ connectBtn.addEventListener('click', async () => {
       clientServerIpHistory = clientServerIpHistory.filter((item) => item !== ip);
       clientServerIpHistory.unshift(ip);
       renderClientServerIpOptions();
+      addLog(clientLogListEl, `已连接到服务器: ${clientBaseUrl}`, 'success');
       showToast('连接服务器成功');
       refreshServerFiles();
       clientRefreshInterval = setInterval(refreshServerFiles, 3000);
@@ -283,6 +304,7 @@ connectBtn.addEventListener('click', async () => {
       throw new Error('响应异常');
     }
   } catch (e) {
+    addLog(clientLogListEl, '连接失败: ' + e.message, 'error');
     showToast('连接失败: ' + e.message);
     connectBtn.disabled = false;
   }
@@ -290,6 +312,7 @@ connectBtn.addEventListener('click', async () => {
 
 disconnectBtn.addEventListener('click', () => {
   isClientConnected = false;
+  addLog(clientLogListEl, '已断开服务器连接', 'warn');
   clientBaseUrl = '';
   disconnectBtn.disabled = true;
   connectBtn.disabled = false;
@@ -324,11 +347,14 @@ async function refreshServerFiles() {
 
 window.downloadFromServer = async (fileName) => {
   showToast('开始下载: ' + fileName);
+  addLog(clientLogListEl, '开始下载: ' + fileName, 'info');
   const result = await window.electronAPI.downloadFromServer(clientBaseUrl, fileName);
   if (result.success) {
+    addLog(clientLogListEl, '下载完成: ' + result.fileName, 'success');
     showToast('下载完成: ' + result.fileName);
     refreshReceiveFiles();
   } else {
+    addLog(clientLogListEl, '下载失败: ' + result.message, 'error');
     showToast('下载失败: ' + result.message);
   }
 };
@@ -340,6 +366,7 @@ async function pollPendingFiles() {
     const data = await res.json();
     if (data.success && data.files && data.files.length > 0) {
       for (const file of data.files) {
+        addLog(clientLogListEl, '服务器发送文件: ' + file.name, 'info');
         showToast('服务器发送文件: ' + file.name);
         await window.electronAPI.downloadFromServer(clientBaseUrl, file.name);
       }
@@ -353,12 +380,15 @@ async function pollPendingFiles() {
 clientUploadZone.addEventListener('click', async () => {
   const result = await window.electronAPI.selectFilesForUpload();
   if (!result.success) return;
+  addLog(clientLogListEl, `正在上传 ${result.files.length} 个文件...`, 'info');
   showToast(`正在上传 ${result.files.length} 个文件...`);
   const uploadResult = await window.electronAPI.uploadToServer(clientBaseUrl, result.files);
   if (uploadResult.success) {
+    addLog(clientLogListEl, '上传成功', 'success');
     showToast('上传成功');
     refreshServerFiles();
   } else {
+    addLog(clientLogListEl, '上传失败: ' + uploadResult.message, 'error');
     showToast('上传失败: ' + uploadResult.message);
   }
 });
@@ -368,6 +398,7 @@ document.getElementById('clientChangeReceiveDir').addEventListener('click', asyn
   if (result.success) {
     receiveDirPathEl.textContent = result.path;
     clientReceiveDirPathEl.textContent = result.path;
+    addLog(clientLogListEl, '接收目录已更改: ' + result.path, 'info');
     showToast('接收目录已更改');
     refreshReceiveFiles();
   }
@@ -401,6 +432,7 @@ serverIpInput.addEventListener('change', () => {
 dropZone.addEventListener('click', async () => {
   const result = await window.electronAPI.selectFilesToShare();
   if (result.success) {
+    addLog(serverLogListEl, `已添加 ${result.files.length} 个文件到共享`, 'success');
     showToast(`已添加 ${result.files.length} 个文件`);
     refreshFiles();
   }
@@ -466,13 +498,25 @@ window.pushFileToClient = async (clientId) => {
   }
   const result = await window.electronAPI.pushFile(clientId, fileName);
   if (result.success) {
+    addLog(serverLogListEl, `已向客户端发送文件: ${fileName}`, 'success');
     showToast('已发送: ' + fileName);
   } else {
+    addLog(serverLogListEl, '发送失败: ' + result.message, 'error');
     showToast('发送失败: ' + result.message);
   }
 };
 
 // Utilities
+function addLog(container, message, type = 'info') {
+  if (!container) return;
+  const entry = document.createElement('div');
+  entry.className = `log-entry log-${type}`;
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  entry.innerHTML = `<span class="log-time">[${time}]</span>${escapeHtml(message)}`;
+  container.appendChild(entry);
+  container.scrollTop = container.scrollHeight;
+}
+
 function getFileIcon(fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
   const map = {
