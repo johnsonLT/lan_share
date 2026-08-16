@@ -78,7 +78,13 @@ async function init() {
   serverBindIpHistory = settings.serverBindIpHistory || [];
   clientServerIpHistory = settings.clientServerIpHistory || [];
 
-  serverBindIpInput.value = settings.selectedServerBindIp || '';
+  const savedBindIp = settings.selectedServerBindIp || '';
+  if (savedBindIp && !localIPs.includes(savedBindIp)) {
+    serverBindIpInput.value = '';
+    window.electronAPI.setSelectedServerBindIp('');
+  } else {
+    serverBindIpInput.value = savedBindIp;
+  }
   serverIpInput.value = settings.selectedClientServerIp || '';
 
   renderServerBindIpOptions();
@@ -177,7 +183,8 @@ async function startServer() {
       renderServerBindIpOptions();
     }
     const bindInfo = bindIp || '0.0.0.0';
-    addLog(serverLogListEl, `服务器已启动: ${result.ip}:${result.port} (绑定 ${bindInfo})`, 'success');
+    const fallbackMsg = result.fallback ? ' [指定 IP 不可用，已回退到 0.0.0.0]' : '';
+    addLog(serverLogListEl, `服务器已启动: ${result.ip}:${result.port} (绑定 ${bindInfo})${fallbackMsg}`, 'success');
     showToast(`服务器已启动: ${result.ip}:${result.port}`);
     refreshInterval = setInterval(refreshFiles, 2000);
   } else {
