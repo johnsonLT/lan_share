@@ -184,6 +184,7 @@ async function startServer() {
     }
     const bindInfo = bindIp || '0.0.0.0';
     addLog(serverLogListEl, `服务器已启动: ${result.ip}:${result.port} (绑定 ${bindInfo})`, 'success');
+    addLog(serverLogListEl, '若手机无法连接，请检查 Windows 防火墙是否放行该端口，并确认路由器未开启 AP 隔离', 'info');
     showToast(`服务器已启动: ${result.ip}:${result.port}`);
     refreshInterval = setInterval(refreshFiles, 2000);
   } else {

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execSync } = require('child_process');
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -27,16 +28,53 @@ function ensureDirs() {
 }
 ensureDirs();
 
+function isIPv4(iface) {
+  return iface.family === 'IPv4' || iface.family === 4;
+}
+
+function ipv4ToInt(ip) {
+  return ip.split('.').reduce((acc, octet) => ((acc << 8) + parseInt(octet, 10)) >>> 0, 0);
+}
+
+function getDefaultGateway() {
+  if (process.platform !== 'win32') return null;
+  try {
+    const out = execSync(
+      'powershell -NoProfile -Command "(Get-NetRoute -DestinationPrefix 0.0.0.0/0 | Sort-Object RouteMetric | Select-Object -First 1).NextHop"',
+      { encoding: 'utf8', timeout: 5000 }
+    ).trim();
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(out)) return out;
+  } catch (err) {
+    // ignore, fall back to first interface
+  }
+  return null;
+}
+
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
+  const candidates = [];
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
+      if (isIPv4(iface) && !iface.internal) {
+        candidates.push(iface);
+      }
+    }
+  }
+  if (candidates.length === 0) return '127.0.0.1';
+
+  // 优先返回与默认网关同网段的网卡（即实际连路由器的物理网卡），
+  // 避免在多网卡（VMware/VirtualBox/Hyper-V/WSL）机器上显示虚拟网卡 IP
+  const gateway = getDefaultGateway();
+  if (gateway) {
+    const gwInt = ipv4ToInt(gateway);
+    for (const iface of candidates) {
+      const mask = iface.netmask ? ipv4ToInt(iface.netmask) : 0xffffff00;
+      if ((ipv4ToInt(iface.address) & mask) === (gwInt & mask)) {
         return iface.address;
       }
     }
   }
-  return '127.0.0.1';
+  return candidates[0].address;
 }
 
 function getLocalIPs() {
@@ -44,7 +82,7 @@ function getLocalIPs() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
+      if (isIPv4(iface) && !iface.internal) {
         ips.push(iface.address);
       }
     }

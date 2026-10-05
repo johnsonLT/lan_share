@@ -9,6 +9,37 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:intl/intl.dart';
 
+enum LogLevel { info, warn, error }
+
+class LogEntry {
+  final DateTime time;
+  final LogLevel level;
+  final String message;
+
+  LogEntry(this.level, this.message) : time = DateTime.now();
+}
+
+class AppLog extends ChangeNotifier {
+  AppLog._();
+  static final AppLog instance = AppLog._();
+
+  final List<LogEntry> entries = [];
+  static const int _maxEntries = 500;
+
+  void add(LogLevel level, String message) {
+    entries.add(LogEntry(level, message));
+    if (entries.length > _maxEntries) {
+      entries.removeRange(0, entries.length - _maxEntries);
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    entries.clear();
+    notifyListeners();
+  }
+}
+
 void main() {
   runApp(const LanShareApp());
 }
@@ -178,9 +209,11 @@ class _ConnectScreenState extends State<ConnectScreen> {
       _error = null;
     });
 
+    AppLog.instance.add(LogLevel.info, '尝试连接 http://$ip:$port/api/status');
     try {
       final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 5)));
       final response = await dio.get('http://$ip:$port/api/status');
+      AppLog.instance.add(LogLevel.info, '服务器响应: ${response.data}');
 
       if (response.data['success'] == true) {
         await Prefs.addIpToHistory(ip);
@@ -191,10 +224,17 @@ class _ConnectScreenState extends State<ConnectScreen> {
           ),
         );
       } else {
+        AppLog.instance.add(LogLevel.warn, '服务器响应异常: ${response.data}');
         setState(() => _error = '服务器响应异常');
       }
+    } on DioException catch (e) {
+      final detail = '类型=${e.type} 错误=${e.message} '
+          '${e.response != null ? 'HTTP=${e.response!.statusCode}' : '无HTTP响应'}';
+      AppLog.instance.add(LogLevel.error, '连接失败: $detail');
+      setState(() => _error = '连接失败，请检查 IP、端口和网络（可查看日志）');
     } catch (e) {
-      setState(() => _error = '连接失败，请检查 IP、端口和网络');
+      AppLog.instance.add(LogLevel.error, '连接失败: $e');
+      setState(() => _error = '连接失败，请检查 IP、端口和网络（可查看日志）');
     } finally {
       setState(() => _isLoading = false);
     }
@@ -214,7 +254,21 @@ class _ConnectScreenState extends State<ConnectScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 60),
+              Row(
+                children: [
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.receipt_long, color: Color(0xFF8B93A7)),
+                    tooltip: '查看日志',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const LogScreen()),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
               Container(
                 width: 56,
                 height: 56,
@@ -384,6 +438,7 @@ class _FileListScreenState extends State<FileListScreen> {
       });
 
       _socket!.onConnect((_) {
+        AppLog.instance.add(LogLevel.info, 'Socket 已连接: $baseUrl');
         _socket!.emit('register', {
           'clientId': clientId,
           'name': 'Android 手机',
@@ -393,16 +448,27 @@ class _FileListScreenState extends State<FileListScreen> {
 
       _socket!.on('push_file', (data) async {
         final fileName = data['name']?.toString() ?? '';
+        AppLog.instance.add(LogLevel.info, '收到服务器推送: $fileName');
         if (fileName.isNotEmpty) {
           setState(() => _status = '收到服务器推送: $fileName');
           await _downloadFile(fileName, data['size'] ?? 0);
         }
       });
 
-      _socket!.onDisconnect((_) {
+      _socket!.onDisconnect((reason) {
+        AppLog.instance.add(LogLevel.warn, 'Socket 连接断开: $reason');
         setState(() => _status = '与服务器的实时连接已断开');
       });
+
+      _socket!.onConnectError((data) {
+        AppLog.instance.add(LogLevel.error, 'Socket 连接错误: $data');
+      });
+
+      _socket!.onError((data) {
+        AppLog.instance.add(LogLevel.error, 'Socket 错误: $data');
+      });
     } catch (e) {
+      AppLog.instance.add(LogLevel.error, 'Socket 初始化失败: $e');
       setState(() => _status = 'Socket 连接失败: $e');
     }
   }
@@ -457,6 +523,7 @@ class _FileListScreenState extends State<FileListScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      AppLog.instance.add(LogLevel.error, '加载文件列表失败: $e');
       setState(() {
         _isLoading = false;
         _status = '加载失败: $e';
@@ -503,12 +570,15 @@ class _FileListScreenState extends State<FileListScreen> {
       );
 
       if (response.data['success'] == true) {
+        AppLog.instance.add(LogLevel.info, '上传成功，共 ${result.files.length} 个文件');
         setState(() => _status = '上传成功');
         await _loadFiles();
       } else {
+        AppLog.instance.add(LogLevel.error, '上传失败: ${response.data}');
         setState(() => _status = '上传失败');
       }
     } catch (e) {
+      AppLog.instance.add(LogLevel.error, '上传出错: $e');
       setState(() => _status = '上传出错: $e');
     } finally {
       setState(() => _isUploading = false);
@@ -539,7 +609,9 @@ class _FileListScreenState extends State<FileListScreen> {
       );
 
       setState(() => _status = '已保存到: $savePath');
+      AppLog.instance.add(LogLevel.info, '下载完成: $fileName → $savePath');
     } catch (e) {
+      AppLog.instance.add(LogLevel.error, '下载 $fileName 失败: $e');
       setState(() => _status = '下载失败: $e');
     }
   }
@@ -547,9 +619,11 @@ class _FileListScreenState extends State<FileListScreen> {
   Future<void> _deleteFile(String fileName) async {
     try {
       await _dio.delete('$baseUrl/api/files/${Uri.encodeComponent(fileName)}');
+      AppLog.instance.add(LogLevel.info, '已删除文件: $fileName');
       setState(() => _status = '已删除');
       await _loadFiles();
     } catch (e) {
+      AppLog.instance.add(LogLevel.error, '删除 $fileName 失败: $e');
       setState(() => _status = '删除失败: $e');
     }
   }
@@ -647,6 +721,15 @@ class _FileListScreenState extends State<FileListScreen> {
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.receipt_long, color: Color(0xFF8B93A7)),
+                    tooltip: '查看日志',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const LogScreen()),
+                      );
+                    },
                   ),
                   IconButton(
                     icon: const Icon(Icons.folder, color: Color(0xFF8B93A7)),
@@ -773,6 +856,112 @@ class _FileListScreenState extends State<FileListScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class LogScreen extends StatelessWidget {
+  const LogScreen({super.key});
+
+  Color _levelColor(LogLevel level) {
+    switch (level) {
+      case LogLevel.error:
+        return const Color(0xFFEF4444);
+      case LogLevel.warn:
+        return const Color(0xFFF59E0B);
+      case LogLevel.info:
+        return const Color(0xFF60A5FA);
+    }
+  }
+
+  String _levelText(LogLevel level) {
+    switch (level) {
+      case LogLevel.error:
+        return '错误';
+      case LogLevel.warn:
+        return '警告';
+      case LogLevel.info:
+        return '信息';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('运行日志'),
+        actions: [
+          TextButton(
+            onPressed: () => AppLog.instance.clear(),
+            child: const Text('清空', style: TextStyle(color: Color(0xFF8B93A7))),
+          ),
+        ],
+      ),
+      body: ListenableBuilder(
+        listenable: AppLog.instance,
+        builder: (context, _) {
+          final entries = AppLog.instance.entries;
+          if (entries.isEmpty) {
+            return const Center(
+              child: Text('暂无日志', style: TextStyle(color: Color(0xFF8B93A7))),
+            );
+          }
+          return ListView.builder(
+            reverse: true,
+            padding: const EdgeInsets.all(16),
+            itemCount: entries.length,
+            itemBuilder: (context, index) {
+              final entry = entries[entries.length - 1 - index];
+              final color = _levelColor(entry.level);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E222A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border(left: BorderSide(color: color, width: 3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            _levelText(entry.level),
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            DateFormat('MM-dd HH:mm:ss').format(entry.time),
+                            style: const TextStyle(
+                              color: Color(0xFF8B93A7),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        entry.message,
+                        style: const TextStyle(
+                          color: Color(0xFFF0F2F5),
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
